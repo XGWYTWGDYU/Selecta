@@ -1,0 +1,33 @@
+Easydict/
+.build/
+build/
+.DS_Store
+*.xcuserstate
+xcuserdata/
+*.log
+__pycache__/
+.venv/
+.models/
+.cache/
+
+# Generated projects and local verification records
+Selecta.xcodeproj/
+docs/
+
+# Local credentials, runtime data and packaged applications
+.env
+.env.*
+*.p12
+*.pfx
+*.key
+*.pem
+*.mobileprovision
+*.app/
+*.dmg
+*.zip
+*.xcarchive/
+*.xcresult/
+*.pyc
+*.sqlite*
+*.db
+*.log.*
