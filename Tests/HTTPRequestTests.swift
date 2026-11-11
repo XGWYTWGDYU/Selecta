@@ -39,13 +39,22 @@ final class HTTPRequestTests: XCTestCase {
         StubProtocol.handle = { request in
             let params = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
             XCTAssertEqual(request.url?.path, "/translate_a/single")
-            XCTAssertEqual(params.first { $0.name == "q" }?.value, "hello & 你好?")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertNil(params.first { $0.name == "q" }, "Text must not be placed in the URL")
+            var body = request.httpBody ?? Data()
+            if let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                while stream.hasBytesAvailable { let count = stream.read(&buffer, maxLength: buffer.count); if count <= 0 { break }; body.append(buffer, count: count) }
+            }
+            var form = URLComponents(); form.percentEncodedQuery = String(decoding: body, as: UTF8.self)
+            XCTAssertEqual(form.queryItems?.first { $0.name == "q" }?.value, "hello & 你好? 1+1")
             XCTAssertEqual(params.first { $0.name == "client" }?.value, "gtx")
             XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
             return (200, ["src": "en", "sentences": [["trans": "你好"]]])
         }
         let service = TranslationService(http: HTTPClient(session: session))
-        let result = try await service.translate("hello & 你好?", from: .auto, to: .zhHans, provider: .google, configuration: .init(endpoint: TranslationProvider.google.defaultEndpoint, model: ""), key: "")
+        let result = try await service.translate("hello & 你好? 1+1", from: .auto, to: .zhHans, provider: .google, configuration: .init(endpoint: TranslationProvider.google.defaultEndpoint, model: ""), key: "")
         XCTAssertEqual(result.text, "你好")
     }
 

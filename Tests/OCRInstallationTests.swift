@@ -97,6 +97,33 @@ final class OCRInstallationTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: staleSetup.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: completed.path))
     }
+    func testReinstallRemovesOnlyInactiveEnvironments() throws {
+        let home = try directory(); defer { try? FileManager.default.removeItem(at: home) }
+        let paths = AppPaths(home: home)
+        let active = paths.ocr.appendingPathComponent("Environments/active")
+        let old = paths.ocr.appendingPathComponent("Environments/old")
+        for directory in [active.appendingPathComponent("bin"), old, paths.environment, paths.models] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        OCRInstallation.removeEnvironments(in: paths, except: active.appendingPathComponent("bin/python"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: active.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.environment.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.models.path), "Models are shared and must be kept")
+    }
+    func testAccelerationNeedsRuntimeAndExportedModels() throws {
+        let home = try directory(); defer { try? FileManager.default.removeItem(at: home) }
+        let paths = AppPaths(home: home)
+        let python = paths.ocr.appendingPathComponent("Environments/active/bin/python").path
+        XCTAssertFalse(OCRInstallation.accelerated(python: python, models: paths.models.path))
+        try FileManager.default.createDirectory(at: paths.ocr.appendingPathComponent("Environments/active/lib/python3.12/site-packages/onnxruntime"), withIntermediateDirectories: true)
+        XCTAssertFalse(OCRInstallation.accelerated(python: python, models: paths.models.path))
+        try FileManager.default.createDirectory(at: paths.models.appendingPathComponent("onnx"), withIntermediateDirectories: true)
+        for name in OCRInstallation.modelNames {
+            try Data([1]).write(to: paths.models.appendingPathComponent("onnx/\(name).v\(OCRInstallation.onnxFormat).onnx"))
+        }
+        XCTAssertTrue(OCRInstallation.accelerated(python: python, models: paths.models.path))
+    }
     func testSetupProcessCancellationAndTimeout() async throws {
         do {
             try await OCRSetupProcess.run(executable: "/bin/sleep", arguments: ["5"], environment: [:], timeout: 0.1)

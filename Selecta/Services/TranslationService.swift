@@ -20,8 +20,13 @@ struct TranslationService {
     private func google(_ text: String, from: Language, to: Language, endpoint: String) async throws -> Translation {
         let base = try HTTPClient.url(endpoint).appendingPathComponent("translate_a/single")
         var components = URLComponents(url: base, resolvingAgainstBaseURL: false)!
-        components.queryItems = ["client": "gtx", "sl": from.googleCode, "tl": to.googleCode, "dt": "t", "dj": "1", "ie": "UTF-8", "q": text].map(URLQueryItem.init)
+        components.queryItems = ["client": "gtx", "sl": from.googleCode, "tl": to.googleCode, "dt": "t", "dj": "1", "ie": "UTF-8", "oe": "UTF-8"].map(URLQueryItem.init)
         var request = URLRequest(url: components.url!, timeoutInterval: 30)
+        // The text goes in a form body: long OCR results exceed URL length limits in a GET query.
+        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        request.httpMethod = "POST"
+        request.httpBody = Data(("q=" + (text.addingPercentEncoding(withAllowedCharacters: unreserved) ?? "")).utf8)
+        request.setValue("application/x-www-form-urlencoded;charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_0) AppleWebKit/537.36 Chrome/77.0.3865.120 Safari/537.36", forHTTPHeaderField: "User-Agent")
         return try Self.parseGoogle(await http.json(request))
     }

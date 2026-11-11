@@ -18,6 +18,21 @@ final class PaddleWorkerTests: XCTestCase {
         }
         XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("starts"), encoding: .utf8), "start\n")
     }
+    func testLargeResponsesSpanningManyReadsAreReassembled() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let script = directory.appendingPathComponent("worker.sh")
+        try "while IFS= read -r line; do printf 'noise\\n%s\\n' \"$line\"; done\n".write(to: script, atomically: true, encoding: .utf8)
+        let worker = PaddleWorker()
+        defer { worker.shutdown() }
+        let image = Data((0..<400_000).map { UInt8($0 % 251) })
+        for _ in 0..<2 {
+            let response = try await worker.recognize(python: "/bin/sh", script: script.path, models: directory.path, image: image)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: response) as? [String: String])
+            XCTAssertEqual(json["image"], image.base64EncodedString())
+        }
+    }
     func testCancellingActiveRequestTerminatesWorker() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

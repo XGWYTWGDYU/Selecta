@@ -31,7 +31,9 @@ final class OCRInstaller: ObservableObject {
             do {
                 try await OCRSetupProcess.run(executable: python, arguments: [script.path, "--check", "--models", models], environment: OCRInstallation(paths: .current, script: script, requirements: script).environment(), timeout: 180)
                 ready = true
-                message = "OCR 已就绪，可离线使用。"
+                message = OCRInstallation.accelerated(python: python, models: models)
+                    ? "OCR 已就绪（GPU 加速），可离线使用。"
+                    : "OCR 已就绪，可离线使用。点击「重新安装 OCR」可启用 GPU 加速（大段文字快约 10 倍）。"
             } catch is CancellationError { message = "已取消检查。" }
             catch { failed = true; message = "环境检查失败，请点击重新安装。" }
         }
@@ -58,8 +60,11 @@ final class OCRInstaller: ObservableObject {
                 PaddleWorker.shared.shutdown()
                 preferences.pythonPath = python.path
                 preferences.paddleModelPath = AppPaths.current.models.path
+                OCRInstallation.removeEnvironments(in: .current, except: python)
                 ready = true
-                message = "OCR 安装完成，可离线使用。"
+                message = OCRInstallation.accelerated(python: python.path, models: AppPaths.current.models.path)
+                    ? "OCR 安装完成（GPU 加速），可离线使用。"
+                    : "OCR 安装完成，可离线使用。"
             } catch is CancellationError {
                 message = "安装已取消。可以重新开始，已下载的依赖缓存会保留。"
             } catch {

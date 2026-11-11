@@ -13,7 +13,8 @@ enum PaddleOCR {
         if let error = json["error"] as? String { throw SelectaError.message(error) }
         let text = (json["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw SelectaError.message("PaddleOCR 未识别到文字，请重新截图。") }
-        return OCRText(text: text, engine: "PaddleOCR · PP-OCRv5（本机 CPU）")
+        let engine = (json["engine"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "PaddleOCR · PP-OCRv5（本机 CPU）"
+        return OCRText(text: text, engine: engine)
     }
 }
 

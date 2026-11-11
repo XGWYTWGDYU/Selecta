@@ -11,6 +11,8 @@ final class PaddleWorker: @unchecked Sendable {
     private var input: FileHandle?
     private var output: FileHandle?
     private var configuration = ""
+    /// Bytes read past the last complete line; only touched on `queue`.
+    private var pending = Data()
 
     private final class Request: @unchecked Sendable {
         let id = UUID()
@@ -40,14 +42,23 @@ final class PaddleWorker: @unchecked Sendable {
                         try self.input?.write(contentsOf: data + Data([10]))
                         var line = Data()
                         var complete = false
-                        while let byte = try self.output?.read(upToCount: 1), !byte.isEmpty {
-                            if byte.first == 10 {
+                        // Read in chunks; a large OCR result is one long line.
+                        lineLoop: while true {
+                            while let newline = self.pending.firstIndex(of: 10) {
+                                line = Data(self.pending[self.pending.startIndex..<newline])
+                                self.pending.removeSubrange(self.pending.startIndex...newline)
                                 if let json = try? JSONSerialization.jsonObject(with: line) as? [String: Any], json["id"] as? String == request.id.uuidString {
                                     complete = true
-                                    break
+                                    break lineLoop
                                 }
-                                line.removeAll(keepingCapacity: true)
-                            } else { line.append(byte) }
+                            }
+                            guard let descriptor = self.output?.fileDescriptor else { break }
+                            // POSIX read returns what is available; FileHandle.read(upToCount:) waits for the full count.
+                            var buffer = [UInt8](repeating: 0, count: 65536)
+                            let count = buffer.withUnsafeMutableBytes { Darwin.read(descriptor, $0.baseAddress, $0.count) }
+                            if count < 0, errno == EINTR { continue }
+                            guard count > 0 else { break }
+                            self.pending.append(buffer, count: count)
                         }
                         let (cancelled, timedOut) = request.state()
                         if cancelled { throw CancellationError() }
@@ -76,6 +87,7 @@ final class PaddleWorker: @unchecked Sendable {
         if configuration == key, process?.isRunning == true { return }
         if process?.isRunning == true { process?.terminate() }
         try? input?.close(); try? output?.close()
+        pending = Data()
         let child = Process()
         let send = Pipe(), receive = Pipe()
         child.executableURL = URL(fileURLWithPath: python)

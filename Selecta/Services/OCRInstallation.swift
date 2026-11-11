@@ -19,6 +19,28 @@ struct OCRInstallation {
             }
         }
     }
+    /// ONNX models exported at install time plus onnxruntime in the environment enable the fast engine;
+    /// environments installed by earlier versions keep working on PaddlePaddle's CPU path.
+    static let onnxFormat = "1"  // Must match ONNX_FORMAT in paddle_ocr.py.
+    static func accelerated(python: String, models: String) -> Bool {
+        let environment = URL(fileURLWithPath: python).deletingLastPathComponent().deletingLastPathComponent()
+        let library = environment.appendingPathComponent("lib")
+        let runtime = ((try? FileManager.default.contentsOfDirectory(atPath: library.path)) ?? []).contains { version in
+            version.hasPrefix("python3") && FileManager.default.fileExists(atPath: library.appendingPathComponent("\(version)/site-packages/onnxruntime").path)
+        }
+        return runtime && modelNames.allSatisfy {
+            FileManager.default.fileExists(atPath: URL(fileURLWithPath: models).appendingPathComponent("onnx/\($0).v\(onnxFormat).onnx").path)
+        }
+    }
+    /// After a successful reinstall, older environments are unused (about 1 GB each).
+    static func removeEnvironments(in paths: AppPaths, except active: URL) {
+        let keep = active.deletingLastPathComponent().deletingLastPathComponent().standardizedFileURL.path
+        let environments = paths.ocr.appendingPathComponent("Environments", isDirectory: true)
+        let candidates = ((try? FileManager.default.contentsOfDirectory(at: environments, includingPropertiesForKeys: nil)) ?? []) + [paths.environment]
+        for directory in candidates where directory.standardizedFileURL.path != keep {
+            try? FileManager.default.removeItem(at: directory)
+        }
+    }
     static func verifyArchive(_ data: Data, checksum: String = uvChecksum) throws {
         guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == checksum else {
             throw SelectaError.message("下载文件校验失败，请重新安装。")
@@ -89,9 +111,9 @@ struct OCRInstallation {
         try Data().write(to: pending)
         let python = target.appendingPathComponent("bin/python")
         try await run(uv, ["pip", "install", "--python", python.path, "--only-binary", ":all:", "--index-url", "https://pypi.org/simple", "-r", requirements.path], env, 1800)
-        await progress(4, "下载百度 PP-OCRv5 模型")
+        await progress(4, "下载百度 PP-OCRv5 模型并转换为加速格式")
         try await run(python.path, [script.path, "--prepare", "--models", paths.models.path], env, 1200)
-        await progress(5, "验证离线 OCR 环境")
+        await progress(5, "验证离线 OCR 环境并编译 GPU 模型")
         try await run(python.path, [script.path, "--check", "--models", paths.models.path], env, 180)
         try Task.checkCancellation()
         guard Self.filesExist(python: python.path, models: paths.models.path) else { throw SelectaError.message("OCR 安装文件不完整，请重新安装。") }
