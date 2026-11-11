@@ -30,8 +30,8 @@ targets:
       path: Selecta/Info.plist
       properties:
         CFBundleDisplayName: Selecta
-        CFBundleShortVersionString: '0.1.1'
-        CFBundleVersion: '2'
+        CFBundleShortVersionString: '0.1.2'
+        CFBundleVersion: '3'
         CFBundleIconFile: Selecta.icns
         LSUIElement: true
         NSHighResolutionCapable: true
