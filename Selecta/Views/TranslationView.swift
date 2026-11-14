@@ -9,6 +9,9 @@ struct TranslationView: View {
     var onSettings: () -> Void
     var onSearch: () -> Void
     @Environment(\.colorScheme) private var scheme
+    @State private var copied: TranslationProvider?
+    @State private var toast: String?
+    @State private var feedbackTask: Task<Void, Never>?
 
     private var mainBackground: Color { scheme == .dark ? Color(red: 35/255, green: 35/255, blue: 37/255) : .white }
     private var queryBackground: Color { scheme == .dark ? Color(red: 48/255, green: 49/255, blue: 50/255) : Color(white: 244/255) }
@@ -62,16 +65,50 @@ struct TranslationView: View {
                 }.padding(.horizontal, 10).padding(.bottom, 7)
             }
         }.background(mainBackground).frame(minWidth: 360, minHeight: 155)
+            .overlay(alignment: .bottom) {
+                if let toast {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(toast)
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+                    .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
+                    .padding(.bottom, 14)
+                    .transition(.move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
+                    .allowsHitTesting(false)
+                }
+            }
             .ignoresSafeArea()
-            .onChange(of: model.source) { _ in if !model.input.isEmpty { model.translate() } }
-            .onChange(of: model.target) { _ in if !model.input.isEmpty { model.translate() } }
+    }
+    private func copyResult(_ text: String, from provider: TranslationProvider) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        let message = "已复制 \(provider.rawValue) 译文"
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.62)) {
+            copied = provider
+            toast = message
+        }
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        feedbackTask?.cancel()
+        feedbackTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                copied = nil
+                toast = nil
+            }
+        }
     }
     private func languageMenu(source: Bool) -> some View {
         let current = source ? model.source : model.target
         return Menu {
             ForEach(Language.allCases) { language in
                 Button(language == .auto && !source ? "自动选择" : language.name) {
-                    if source { model.source = language } else { model.target = language }
+                    model.setLanguage(language, source: source)
                 }
             }
         } label: {
@@ -97,10 +134,17 @@ struct TranslationView: View {
                 Spacer()
                 if case .loading = state { ProgressView().controlSize(.mini) }
                 if case .success(let text) = state {
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
-                    } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).help("复制译文")
+                    Button { copyResult(text, from: provider) } label: {
+                        ZStack {
+                            if copied == provider {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+                            } else {
+                                Image(systemName: "doc.on.doc")
+                                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+                            }
+                        }.frame(width: 16, height: 16)
+                    }.buttonStyle(.borderless).help("复制译文").accessibilityLabel("复制 \(provider.rawValue) 译文")
                 }
             }.foregroundStyle(.secondary).padding(.horizontal, 8).frame(height: 28).background(barBackground)
             if !model.collapsedProviders.contains(provider) {

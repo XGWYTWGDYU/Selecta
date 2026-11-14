@@ -86,6 +86,13 @@ final class TranslationModel: ObservableObject {
         }
     }
 
+    /// Changing a language re-translates once; views must not also observe source/target and translate again.
+    func setLanguage(_ language: Language, source isSource: Bool) {
+        if isSource { guard source != language else { return }; source = language }
+        else { guard target != language else { return }; target = language }
+        if !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { translate() }
+    }
+
     func swap() {
         let previousSource = source == .auto ? detected : source
         source = target == .auto ? resolvedTarget : target

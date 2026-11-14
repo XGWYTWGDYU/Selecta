@@ -14,6 +14,7 @@ struct QueryEditor: NSViewRepresentable {
         editor.minSize = NSSize(width: 0, height: 54)
         editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.isRichText = false
+        editor.allowsUndo = true
         editor.drawsBackground = false
         editor.font = .systemFont(ofSize: 14)
         editor.textColor = .labelColor

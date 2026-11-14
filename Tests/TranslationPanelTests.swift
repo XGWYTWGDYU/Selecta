@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import Selecta
 
@@ -27,6 +28,43 @@ final class TranslationPanelTests: XCTestCase {
         XCTAssertTrue(panel.isVisible)
         XCTAssertTrue(bounds.contains(panel.frame))
         XCTAssertEqual(panel.level, .floating)
+    }
+    @MainActor
+    func testEditingShortcutsWorkWithoutActivatingTheApp() throws {
+        let panel = TranslationPanel()
+        defer { panel.orderOut(nil) }
+        var value = ""
+        let binding = Binding(get: { value }, set: { value = $0 })
+        let hosting = NSHostingView(rootView: QueryEditor(text: binding) {})
+        hosting.frame = NSRect(x: 0, y: 0, width: 420, height: 120)
+        panel.contentView = hosting
+        panel.orderFrontRegardless()
+        hosting.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        let editor = try XCTUnwrap(findEditor(hosting))
+        XCTAssertTrue(panel.makeFirstResponder(editor))
+        let pasteboard = NSPasteboard.general
+        let saved = pasteboard.string(forType: .string)
+        defer { pasteboard.clearContents(); if let saved { pasteboard.setString(saved, forType: .string) } }
+        pasteboard.clearContents()
+        pasteboard.setString("粘贴 paste", forType: .string)
+        func key(_ character: String, _ modifiers: NSEvent.ModifierFlags = .command) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: panel.windowNumber,
+                                           context: nil, characters: character, charactersIgnoringModifiers: character, isARepeat: false, keyCode: 0))
+        }
+        XCTAssertTrue(panel.performKeyEquivalent(with: try key("v")))
+        XCTAssertEqual(editor.string, "粘贴 paste")
+        XCTAssertEqual(value, "粘贴 paste")
+        XCTAssertTrue(panel.performKeyEquivalent(with: try key("a")))
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 0, length: (editor.string as NSString).length))
+        XCTAssertTrue(panel.performKeyEquivalent(with: try key("z")))
+        XCTAssertEqual(editor.string, "")
+        XCTAssertFalse(panel.performKeyEquivalent(with: try key("v", [.command, .option])), "Unrelated combinations stay unhandled")
+    }
+    @MainActor
+    private func findEditor(_ view: NSView) -> NSTextView? {
+        if let editor = view as? NSTextView { return editor }
+        return view.subviews.lazy.compactMap { self.findEditor($0) }.first
     }
     @MainActor
     func testReopenDoesNotCreateAnyWindows() {
